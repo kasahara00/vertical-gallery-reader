@@ -1,8 +1,11 @@
 {
     "manifest_version": 3,
     "name": "Vertical Gallery Reader",
-    "version": "0.1.0",
-    "description": "Convert image galleries into vertical readers.",
+    "version": "1.0.0",
+    "description": "Read galleries in a vertical scrolling layout.",
+    "permissions": [
+        "storage"
+    ],
     "content_scripts": [
         {
             "matches": [
@@ -11,6 +14,7 @@
             "js": [
                 "src/gallery.js",
                 "src/imageLoader.js",
+                "src/settings.js",
                 "src/reader.js",
                 "src/content.js"
             ],

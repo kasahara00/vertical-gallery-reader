@@ -19,8 +19,11 @@ async function openReader() {
 	previousOverflow = document.documentElement.style.overflow;
 	document.documentElement.style.overflow = "hidden";
 
-	reader = new VerticalReader(imagePageUrls);
-
+	const settings = await ReaderSettings.load();
+	reader = new VerticalReader(
+		imagePageUrls,
+		settings
+	);
 	reader.open();
 
 	button.textContent = "Close Reader";
