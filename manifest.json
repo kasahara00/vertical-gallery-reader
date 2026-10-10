@@ -1,0 +1,22 @@
+{
+    "manifest_version": 3,
+    "name": "Vertical Gallery Reader",
+    "version": "0.1.0",
+    "description": "Convert image galleries into vertical readers.",
+    "content_scripts": [
+        {
+            "matches": [
+                "https://e-hentai.org/g/*"
+            ],
+            "js": [
+                "src/gallery.js",
+                "src/imageLoader.js",
+                "src/reader.js",
+                "src/content.js"
+            ],
+            "css": [
+                "src/reader.css"
+            ]
+        }
+    ]
+}
