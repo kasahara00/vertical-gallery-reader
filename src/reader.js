@@ -424,6 +424,16 @@ class VerticalReader {
             return;
         }
 
+        const affectsLayout =
+            changedSetting === "imageWidth" ||
+            changedSetting === "imageSpacing";
+
+        // Capture the current image before changing
+        // its dimensions or the gaps between images.
+        const readingPosition = affectsLayout
+            ? this.captureReadingPosition()
+            : null;
+
         this.container.style.setProperty(
             "--reader-image-width",
             `${this.settings.imageWidth}px`
@@ -433,6 +443,13 @@ class VerticalReader {
             "--reader-image-spacing",
             `${this.settings.imageSpacing}px`
         );
+
+        // Restore the same image and relative position
+        // after the layout has changed.
+        if (readingPosition) {
+            this.restoreReadingPosition(readingPosition);
+            this.scheduleScrollUpdate();
+        }
 
         if (changedSetting === "pagesToPreload") {
             this.updatePreloadQueue();
@@ -593,5 +610,68 @@ class VerticalReader {
 
         this.container?.remove();
         this.container = null;
+    }
+
+    captureReadingPosition() {
+        if (!this.container) {
+            return null;
+        }
+
+        const slots = this.container.querySelectorAll(
+            ".reader-image-slot"
+        );
+
+        const containerTop =
+            this.container.getBoundingClientRect().top;
+
+        for (const slot of slots) {
+            const rect = slot.getBoundingClientRect();
+
+            // Find the first image that extends below
+            // the top of the reading viewport.
+            if (rect.bottom > containerTop) {
+                const index = Number(slot.dataset.index);
+
+                // How far through this image are we?
+                const offset = containerTop - rect.top;
+
+                const progress = Math.max(
+                    0,
+                    Math.min(1, offset / rect.height)
+                );
+
+                return { index, progress };
+            }
+        }
+
+        return null;
+    }
+
+    restoreReadingPosition(position) {
+        if (!position || !this.container) {
+            return;
+        }
+
+        const slot = this.container.querySelector(
+            `.reader-image-slot[data-index="${position.index}"]`
+        );
+
+        if (!slot) {
+            return;
+        }
+
+        const containerRect =
+            this.container.getBoundingClientRect();
+
+        const slotRect = slot.getBoundingClientRect();
+
+        // Where should the viewport start relative
+        // to the resized image?
+        const desiredOffset = position.progress * slotRect.height;
+
+        // Adjust scrollTop so the same portion
+        // of the image remains visible.
+        this.container.scrollTop +=
+            slotRect.top - containerRect.top + desiredOffset;
     }
 }
