@@ -1,11 +1,9 @@
+
 function getImagePageUrls(doc = document) {
     const links = doc.querySelectorAll('a[href*="/s/"]');
 
-    const urls = Array.from(links).map(link => link.href);
-
-    return [...new Set(urls)];
+    return [...new Set(Array.from(links, link => link.href))];
 }
-
 
 function getLastGalleryPage(doc = document) {
     const links = doc.querySelectorAll('a[href*="p="]');
@@ -15,7 +13,6 @@ function getLastGalleryPage(doc = document) {
     for (const link of links) {
         const url = new URL(link.href);
 
-        // Only consider links to this gallery.
         if (url.pathname !== window.location.pathname) {
             continue;
         }
@@ -30,12 +27,12 @@ function getLastGalleryPage(doc = document) {
     return lastPage;
 }
 
-async function fetchGalleryPage(pageNumber) {
+async function fetchGalleryPage(pageNumber, signal) {
     const url = new URL(window.location.href);
 
-    url.searchParams.set("p", pageNumber);
+    url.searchParams.set("p", String(pageNumber));
 
-    const response = await fetch(url);
+    const response = await fetch(url, { signal });
 
     if (!response.ok) {
         throw new Error(
@@ -45,44 +42,59 @@ async function fetchGalleryPage(pageNumber) {
 
     const html = await response.text();
 
-    const parser = new DOMParser();
-
-    return parser.parseFromString(html, "text/html");
+    return new DOMParser().parseFromString(html, "text/html");
 }
 
-
-async function getAllImagePageUrls() {
+// Discover image-page URLs incrementally.
+async function* discoverImagePageUrls(signal) {
     const lastPage = getLastGalleryPage();
+
+    const currentPage = Number(
+        new URL(window.location.href).searchParams.get("p") || 0
+    );
+
+    const seen = new Set();
 
     console.log(`Found ${lastPage + 1} gallery pages`);
 
-    const allUrls = new Set();
-
+    // Process gallery pages in order so images remain
+    // in the correct reading sequence.
     for (let page = 0; page <= lastPage; page++) {
-        console.log(`Processing gallery page ${page + 1}`);
-
-        let doc;
-
-        // Reuse the currently loaded document when possible.
-        const currentPage = Number(
-            new URL(window.location.href).searchParams.get("p") || 0
-        );
-
-        if (page === currentPage) {
-            doc = document;
-        } else {
-            doc = await fetchGalleryPage(page);
+        if (signal?.aborted) {
+            return;
         }
 
-        const urls = getImagePageUrls(doc);
+        const doc =
+            page === currentPage
+                ? document
+                : await fetchGalleryPage(page, signal);
 
-        for (const url of urls) {
-            allUrls.add(url);
+        if (signal?.aborted) {
+            return;
+        }
+
+        const batch = getImagePageUrls(doc).filter(url => {
+            if (seen.has(url)) {
+                return false;
+            }
+
+            seen.add(url);
+            return true;
+        });
+
+        if (batch.length > 0) {
+            yield batch;
         }
     }
-
-    return [...allUrls];
 }
 
+// Keep the old API available for compatibility.
+async function getAllImagePageUrls(signal) {
+    const urls = [];
 
+    for await (const batch of discoverImagePageUrls(signal)) {
+        urls.push(...batch);
+    }
 
+    return urls;
+}

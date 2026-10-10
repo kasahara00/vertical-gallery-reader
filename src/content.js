@@ -1,16 +1,15 @@
 
 console.log("Vertical Gallery Reader loaded!");
 
-// =========================================
-// 1. CREATE READER TOGGLE BUTTON
-// =========================================
+// ========================================
+// READER TOGGLE BUTTON
+// ========================================
 
 const button = document.createElement("button");
 
 button.id = "vertical-reader-button";
 button.type = "button";
 
-// Book icon + button text.
 function showReadButton() {
 	button.innerHTML = `
     <span class="reader-button-content">
@@ -36,103 +35,142 @@ function showReadButton() {
   `;
 }
 
-showReadButton();
-
-// On gallery pages, #gdc contains the category badge.
 const categoryContainer = document.querySelector("#gdc");
 
-// Position the button above the category badge.
 function placeButtonInGallery() {
+	button.classList.remove("reader-open");
+	button.style.width = "";
+
 	if (categoryContainer) {
 		categoryContainer.prepend(button);
 
-		// Match the rendered width of the category badge.
-		const categoryBadge = categoryContainer.querySelector(".cs");
+		const badge = categoryContainer.querySelector(".cs");
 
-		if (categoryBadge) {
-			const width = categoryBadge.getBoundingClientRect().width;
+		if (badge) {
+			const width = badge.getBoundingClientRect().width;
 
 			if (width > 0) {
 				button.style.width = `${width}px`;
 			}
 		}
 	} else {
-		// Fallback if the gallery layout changes.
 		document.body.appendChild(button);
 	}
 }
 
+showReadButton();
 placeButtonInGallery();
 
-
-// =========================================
-// 2. READER STATE
-// =========================================
+// ========================================
+// READER STATE
+// ========================================
 
 let reader = null;
+let discoveryController = null;
+
 let previousOverflow = "";
 let isOpening = false;
 
-
-// =========================================
-// 3. OPEN READER
-// =========================================
+// ========================================
+// OPEN READER
+// ========================================
 
 async function openReader() {
-	const imagePageUrls = await getAllImagePageUrls();
-
-	console.log(`Found ${imagePageUrls.length} images`);
-
-	if (imagePageUrls.length === 0) {
-		throw new Error("No images found in this gallery.");
-	}
-
+	// Load saved settings first.
+	// Do not wait for gallery URL discovery.
 	const settings = await ReaderSettings.load();
 
-	previousOverflow = document.documentElement.style.overflow;
+	previousOverflow =
+		document.documentElement.style.overflow;
+
 	document.documentElement.style.overflow = "hidden";
 
-	reader = new VerticalReader(imagePageUrls, settings);
-	reader.open();
+	const currentReader = new VerticalReader([], settings);
 
-	// Move the button outside the gallery's stacking contexts
-	// so it remains visible above the full-screen reader.
+	reader = currentReader;
+
+	// Open immediately, even with zero image URLs.
+	currentReader.open();
+
+	// Move the button above the full-screen overlay.
 	document.body.appendChild(button);
 
-	// Remove the category badge's width before applying
-	// the fixed-position Close Reader styling.
 	button.style.width = "";
-
 	button.classList.add("reader-open");
 	button.textContent = "Close Reader";
+
+	const controller = new AbortController();
+
+	discoveryController = controller;
+
+	// Run gallery discovery in the background.
+	// Deliberately do not await this operation.
+	void (async () => {
+		try {
+			for await (
+				const batch of discoverImagePageUrls(
+					controller.signal
+				)
+			) {
+				if (
+					controller.signal.aborted ||
+					currentReader.closed
+				) {
+					break;
+				}
+
+				currentReader.appendImagePageUrls(batch);
+			}
+
+			if (
+				!controller.signal.aborted &&
+				!currentReader.closed
+			) {
+				currentReader.finishDiscovery();
+			}
+		} catch (error) {
+			if (
+				!controller.signal.aborted &&
+				!currentReader.closed
+			) {
+				console.error(
+					"Gallery discovery failed:",
+					error
+				);
+
+				currentReader.finishDiscovery(error);
+			}
+		} finally {
+			// Do not clear a newer reader's controller.
+			if (discoveryController === controller) {
+				discoveryController = null;
+			}
+		}
+	})();
 }
 
-
-// =========================================
-// 4. CLOSE READER
-// =========================================
+// ========================================
+// CLOSE READER
+// ========================================
 
 function closeReader() {
-	if (reader !== null) {
-		reader.close();
-		reader = null;
-	}
+	// Cancel outstanding gallery-page requests.
+	discoveryController?.abort();
+	discoveryController = null;
 
-	document.documentElement.style.overflow = previousOverflow;
+	reader?.close();
+	reader = null;
 
-	button.classList.remove("reader-open");
+	document.documentElement.style.overflow =
+		previousOverflow;
 
-	// Restore the book icon and text.
 	showReadButton();
-
-	// Return the button above the category badge.
 	placeButtonInGallery();
 }
 
-
-// =========================================
-// 5. TOGGLE BUTTON EVENT
-// =========================================
+// ========================================
+// TOGGLE BUTTON CLICK
+// ========================================
 
 button.addEventListener("click", async () => {
 	if (isOpening) {
@@ -147,19 +185,25 @@ button.addEventListener("click", async () => {
 	isOpening = true;
 
 	button.disabled = true;
-	button.textContent = "Finding images...";
+	button.textContent = "Opening reader...";
 
 	try {
 		await openReader();
 	} catch (error) {
-		console.error("Failed to open reader:", error);
+		console.error(
+			"Failed to open reader:",
+			error
+		);
+
+		discoveryController?.abort();
+		discoveryController = null;
 
 		reader?.close();
 		reader = null;
 
-		document.documentElement.style.overflow = previousOverflow;
+		document.documentElement.style.overflow =
+			previousOverflow;
 
-		button.classList.remove("reader-open");
 		showReadButton();
 		placeButtonInGallery();
 	} finally {

@@ -8,12 +8,11 @@ const ImageState = Object.freeze({
 
 class VerticalReader {
     constructor(imagePageUrls, settings) {
-        this.imagePageUrls = imagePageUrls;
+        this.imagePageUrls = [...imagePageUrls];
         this.settings = settings;
 
         this.container = null;
         this.observer = null;
-
         this.controller = new AbortController();
 
         this.queue = [];
@@ -22,19 +21,23 @@ class VerticalReader {
 
         this.closed = false;
 
-        this.imageStates = new Array(
-            imagePageUrls.length
-        ).fill(ImageState.WAITING);
+        this.imageStates = this.imagePageUrls.map(
+            () => ImageState.WAITING
+        );
 
-        // Index of the image currently being read.
         this.currentIndex = 0;
-
-        // Number of images to keep ready behind the reader.
         this.pagesBehind = 2;
-
-        // Used to avoid excessive scroll calculations.
         this.scrollUpdateScheduled = false;
+
+        this.discoveryFinished = false;
+        this.discoveryMessage = null;
+
+        this.seenUrls = new Set(this.imagePageUrls);
     }
+
+    // ========================================
+    // OPEN READER
+    // ========================================
 
     open() {
         this.container = document.createElement("div");
@@ -46,6 +49,7 @@ class VerticalReader {
 
         this.createPlaceholders();
         this.createSettingsButton();
+        this.createDiscoveryMessage();
         this.setupObserver();
 
         this.container.addEventListener(
@@ -54,22 +58,137 @@ class VerticalReader {
             { passive: true }
         );
 
-        // Start loading the first few images immediately.
         this.updatePreloadQueue();
     }
 
+    // ========================================
+    // GALLERY DISCOVERY STATUS
+    // ========================================
+
+    createDiscoveryMessage() {
+        const message = document.createElement("div");
+
+        message.className = "reader-discovery-message";
+        message.setAttribute("role", "status");
+
+        message.style.cssText = `
+      max-width: 900px;
+      margin: 16px auto;
+      padding: 16px;
+      text-align: center;
+      color: #bbb;
+      font: 14px Arial, sans-serif;
+    `;
+
+        this.discoveryMessage = message;
+        this.container.appendChild(message);
+
+        this.updateDiscoveryMessage();
+    }
+
+    updateDiscoveryMessage(error = null) {
+        if (!this.discoveryMessage || this.closed) {
+            return;
+        }
+
+        if (error) {
+            this.discoveryMessage.textContent =
+                `Could not discover all gallery pages: ${error.message}. ` +
+                "Already found images remain available.";
+
+            this.discoveryMessage.style.color = "#ff9b9b";
+        } else if (this.discoveryFinished) {
+            this.discoveryMessage.remove();
+            this.discoveryMessage = null;
+        } else {
+            this.discoveryMessage.textContent =
+                this.imagePageUrls.length > 0
+                    ? `Found ${this.imagePageUrls.length} images. Discovering the rest...`
+                    : "Finding the first images...";
+        }
+    }
+
+    finishDiscovery(error = null) {
+        if (this.closed) {
+            return;
+        }
+
+        this.discoveryFinished = true;
+        this.updateDiscoveryMessage(error);
+    }
+
+    // ========================================
+    // ADD NEW IMAGES WHILE READING
+    // ========================================
+
+    appendImagePageUrls(newUrls) {
+        if (this.closed || !this.container) {
+            return;
+        }
+
+        let added = 0;
+
+        for (const url of newUrls) {
+            if (this.seenUrls.has(url)) {
+                continue;
+            }
+
+            this.seenUrls.add(url);
+
+            const index = this.imagePageUrls.length;
+
+            this.imagePageUrls.push(url);
+            this.imageStates.push(ImageState.WAITING);
+
+            this.createPlaceholder(index);
+
+            added++;
+        }
+
+        if (added > 0) {
+            this.updateDiscoveryMessage();
+            this.scheduleScrollUpdate();
+            this.updatePreloadQueue();
+        }
+    }
+
+    // ========================================
+    // IMAGE PLACEHOLDERS
+    // ========================================
+
     createPlaceholders() {
-        this.imagePageUrls.forEach((url, index) => {
-            const placeholder = document.createElement("div");
-
-            placeholder.className = "reader-image-slot";
-            placeholder.dataset.index = index;
-
-            this.container.appendChild(placeholder);
-
-            this.setImageState(index, ImageState.WAITING);
+        this.imagePageUrls.forEach((_, index) => {
+            this.createPlaceholder(index);
         });
     }
+
+    createPlaceholder(index) {
+        const slot = document.createElement("div");
+
+        slot.className = "reader-image-slot";
+        slot.dataset.index = String(index);
+
+        // Keep image slots before the discovery message.
+        this.container.insertBefore(
+            slot,
+            this.discoveryMessage
+        );
+
+        this.setImageState(index, ImageState.WAITING);
+
+        // Observe slots added after the reader opened.
+        this.observer?.observe(slot);
+    }
+
+    getSlot(index) {
+        return this.container?.querySelector(
+            `.reader-image-slot[data-index="${index}"]`
+        );
+    }
+
+    // ========================================
+    // IMAGE LOADING STATES
+    // ========================================
 
     setImageState(index, state, message = "") {
         if (this.closed || !this.container) {
@@ -78,15 +197,9 @@ class VerticalReader {
 
         this.imageStates[index] = state;
 
-        const slot = this.container.querySelector(
-            `[data-index="${index}"]`
-        );
+        const slot = this.getSlot(index);
 
-        if (!slot) {
-            return;
-        }
-
-        if (state === ImageState.LOADED) {
+        if (!slot || state === ImageState.LOADED) {
             return;
         }
 
@@ -106,15 +219,16 @@ class VerticalReader {
             text.textContent =
                 message || `Failed to load page ${index + 1}`;
 
-            const retryButton = document.createElement("button");
-            retryButton.className = "reader-retry-button";
-            retryButton.textContent = "Retry";
+            const retry = document.createElement("button");
 
-            retryButton.addEventListener("click", () => {
+            retry.className = "reader-retry-button";
+            retry.textContent = "Retry";
+
+            retry.addEventListener("click", () => {
                 this.retryImage(index);
             });
 
-            status.appendChild(text, retryButton);
+            status.append(text, retry);
             slot.replaceChildren(status);
 
             return;
@@ -127,33 +241,26 @@ class VerticalReader {
         slot.replaceChildren(status);
     }
 
+    // ========================================
+    // OBSERVE VISIBLE IMAGES
+    // ========================================
+
     setupObserver() {
         this.observer?.disconnect();
 
-        // Observe the actual visible viewport.
-        // Preloading ahead is handled separately by image count.
         this.observer = new IntersectionObserver(
-            (entries) => {
-                if (this.closed) {
-                    return;
-                }
-
-                // Recalculate which image is currently visible.
-                this.scheduleScrollUpdate();
-            },
+            () => this.scheduleScrollUpdate(),
             {
                 root: this.container,
                 threshold: 0
             }
         );
 
-        const slots = this.container.querySelectorAll(
-            ".reader-image-slot"
-        );
-
-        slots.forEach((slot) => {
-            this.observer.observe(slot);
-        });
+        this.container
+            .querySelectorAll(".reader-image-slot")
+            .forEach(slot => {
+                this.observer.observe(slot);
+            });
     }
 
     scheduleScrollUpdate() {
@@ -176,39 +283,39 @@ class VerticalReader {
     }
 
     updateCurrentIndex() {
-        if (!this.container) {
+        if (!this.container || !this.imagePageUrls.length) {
             return;
         }
+
+        const readingPosition =
+            this.container.getBoundingClientRect().top + 100;
 
         const slots = this.container.querySelectorAll(
             ".reader-image-slot"
         );
 
-        const containerRect =
-            this.container.getBoundingClientRect();
-
-        // Use a point near the top of the reader viewport
-        // to identify the current image.
-        const readingPosition = containerRect.top + 100;
-
         let newIndex = 0;
 
         for (const slot of slots) {
-            const rect = slot.getBoundingClientRect();
+            newIndex = Number(slot.dataset.index);
 
-            if (rect.bottom > readingPosition) {
-                newIndex = Number(slot.dataset.index);
+            if (
+                slot.getBoundingClientRect().bottom >
+                readingPosition
+            ) {
                 break;
             }
-
-            newIndex = Number(slot.dataset.index);
         }
 
         this.currentIndex = newIndex;
     }
 
+    // ========================================
+    // PRELOAD QUEUE
+    // ========================================
+
     updatePreloadQueue() {
-        if (this.closed) {
+        if (this.closed || !this.imagePageUrls.length) {
             return;
         }
 
@@ -222,41 +329,36 @@ class VerticalReader {
             this.currentIndex + this.settings.pagesToPreload
         );
 
-        // Rebuild the waiting queue based on the
-        // current reading position.
         const newQueue = [];
 
-        // Prioritize the current image.
-        if (
-            this.imageStates[this.currentIndex] === ImageState.WAITING
-        ) {
-            newQueue.push(this.currentIndex);
-        }
-
-        // Then prioritize images ahead.
-        for (
-            let index = this.currentIndex + 1;
-            index <= end;
-            index++
-        ) {
+        const add = index => {
             if (this.imageStates[index] === ImageState.WAITING) {
                 newQueue.push(index);
             }
+        };
+
+        // Prioritize current page.
+        add(this.currentIndex);
+
+        // Then pages ahead.
+        for (
+            let i = this.currentIndex + 1;
+            i <= end;
+            i++
+        ) {
+            add(i);
         }
 
-        // Finally, include nearby images behind.
+        // Then nearby pages behind.
         for (
-            let index = this.currentIndex - 1;
-            index >= start;
-            index--
+            let i = this.currentIndex - 1;
+            i >= start;
+            i--
         ) {
-            if (this.imageStates[index] === ImageState.WAITING) {
-                newQueue.push(index);
-            }
+            add(i);
         }
 
         this.queue = newQueue;
-
         this.processQueue();
     }
 
@@ -268,7 +370,9 @@ class VerticalReader {
         ) {
             const index = this.queue.shift();
 
-            if (this.imageStates[index] !== ImageState.WAITING) {
+            if (
+                this.imageStates[index] !== ImageState.WAITING
+            ) {
                 continue;
             }
 
@@ -282,7 +386,7 @@ class VerticalReader {
                         this.imageStates[index] = ImageState.LOADED;
                     }
                 })
-                .catch((error) => {
+                .catch(error => {
                     if (this.closed) {
                         return;
                     }
@@ -305,11 +409,13 @@ class VerticalReader {
         }
     }
 
-    async loadImage(index) {
-        const imagePageUrl = this.imagePageUrls[index];
+    // ========================================
+    // DOWNLOAD AND INSERT IMAGE
+    // ========================================
 
+    async loadImage(index) {
         const imageUrl = await getImageUrl(
-            imagePageUrl,
+            this.imagePageUrls[index],
             this.controller.signal
         );
 
@@ -317,9 +423,7 @@ class VerticalReader {
             return;
         }
 
-        const slot = this.container.querySelector(
-            `[data-index="${index}"]`
-        );
+        const slot = this.getSlot(index);
 
         if (!slot) {
             return;
@@ -360,64 +464,100 @@ class VerticalReader {
             slot.replaceChildren(img);
         });
 
-        // Image dimensions may have changed the layout.
         this.scheduleScrollUpdate();
     }
 
+    // ========================================
+    // PRESERVE READING POSITION
+    // ========================================
+
     preserveScrollPosition(updateDOM) {
-        const container = this.container;
-
-        if (!container) {
-            return;
-        }
-
-        const slots = container.querySelectorAll(
-            ".reader-image-slot"
-        );
-
-        const containerTop =
-            container.getBoundingClientRect().top;
-
-        let anchor = null;
-
-        for (const slot of slots) {
-            const rect = slot.getBoundingClientRect();
-
-            if (rect.bottom > containerTop) {
-                anchor = slot;
-                break;
-            }
-        }
-
-        const oldTop = anchor?.getBoundingClientRect().top;
+        const position = this.captureReadingPosition();
 
         updateDOM();
 
-        if (!anchor) {
-            return;
-        }
-
-        const newTop = anchor.getBoundingClientRect().top;
-
-        container.scrollTop += newTop - oldTop;
+        this.restoreReadingPosition(position);
     }
 
-    retryImage(index) {
-        if (this.closed) {
+    captureReadingPosition() {
+        if (!this.container) {
+            return null;
+        }
+
+        const top =
+            this.container.getBoundingClientRect().top;
+
+        for (
+            const slot of this.container.querySelectorAll(
+                ".reader-image-slot"
+            )
+        ) {
+            const rect = slot.getBoundingClientRect();
+
+            if (rect.bottom > top) {
+                const offset = top - rect.top;
+
+                return {
+                    index: Number(slot.dataset.index),
+
+                    progress: Math.max(
+                        0,
+                        Math.min(
+                            1,
+                            offset / Math.max(1, rect.height)
+                        )
+                    )
+                };
+            }
+        }
+
+        return null;
+    }
+
+    restoreReadingPosition(position) {
+        if (!position || !this.container) {
             return;
         }
 
-        if (this.imageStates[index] !== ImageState.FAILED) {
+        const slot = this.getSlot(position.index);
+
+        if (!slot) {
+            return;
+        }
+
+        const containerTop =
+            this.container.getBoundingClientRect().top;
+
+        const rect = slot.getBoundingClientRect();
+
+        this.container.scrollTop +=
+            rect.top -
+            containerTop +
+            position.progress * rect.height;
+    }
+
+    // ========================================
+    // RETRY FAILED IMAGES
+    // ========================================
+
+    retryImage(index) {
+        if (
+            this.closed ||
+            this.imageStates[index] !== ImageState.FAILED
+        ) {
             return;
         }
 
         this.setImageState(index, ImageState.WAITING);
 
-        // Make the retried image the highest priority.
         this.queue.unshift(index);
 
         this.processQueue();
     }
+
+    // ========================================
+    // SETTINGS
+    // ========================================
 
     applySettings(changedSetting = null) {
         if (!this.container) {
@@ -428,9 +568,7 @@ class VerticalReader {
             changedSetting === "imageWidth" ||
             changedSetting === "imageSpacing";
 
-        // Capture the current image before changing
-        // its dimensions or the gaps between images.
-        const readingPosition = affectsLayout
+        const position = affectsLayout
             ? this.captureReadingPosition()
             : null;
 
@@ -444,10 +582,8 @@ class VerticalReader {
             `${this.settings.imageSpacing}px`
         );
 
-        // Restore the same image and relative position
-        // after the layout has changed.
-        if (readingPosition) {
-            this.restoreReadingPosition(readingPosition);
+        if (position) {
+            this.restoreReadingPosition(position);
             this.scheduleScrollUpdate();
         }
 
@@ -458,6 +594,7 @@ class VerticalReader {
 
     createSettingsPanel() {
         const panel = document.createElement("div");
+
         panel.className = "reader-settings-panel";
 
         const title = document.createElement("h3");
@@ -499,84 +636,80 @@ class VerticalReader {
             const label = document.createElement("label");
             label.textContent = control.label;
 
-            const inputRow = document.createElement("div");
-            inputRow.className = "reader-setting-input-row";
+            const row = document.createElement("div");
+            row.className = "reader-setting-input-row";
 
             const slider = document.createElement("input");
+
             slider.type = "range";
             slider.min = control.min;
             slider.max = control.max;
             slider.step = control.step;
             slider.value = this.settings[control.key];
 
-            const numberInput = document.createElement("input");
-            numberInput.type = "number";
-            numberInput.min = control.min;
-            numberInput.max = control.max;
-            numberInput.step = 1;
-            numberInput.value = this.settings[control.key];
-            numberInput.className = "reader-setting-number";
+            const number = document.createElement("input");
+
+            number.type = "number";
+            number.min = control.min;
+            number.max = control.max;
+            number.step = 1;
+            number.value = this.settings[control.key];
+            number.className = "reader-setting-number";
 
             const unit = document.createElement("span");
             unit.textContent = control.unit;
 
-            // Update the setting and both inputs together.
-            const updateSetting = (newValue) => {
-                this.settings[control.key] = newValue;
+            const update = value => {
+                this.settings[control.key] = value;
 
-                slider.value = newValue;
-                numberInput.value = newValue;
+                slider.value = value;
+                number.value = value;
 
                 this.applySettings(control.key);
             };
 
-            // Save the setting to Chrome storage.
-            const saveSetting = async () => {
+            const save = async () => {
                 try {
                     await ReaderSettings.save(this.settings);
                 } catch (error) {
-                    console.error("Failed to save settings:", error);
+                    console.error(
+                        "Failed to save settings:",
+                        error
+                    );
                 }
             };
 
-            // Slider: update continuously while dragging.
             slider.addEventListener("input", () => {
-                updateSetting(Number(slider.value));
+                update(Number(slider.value));
             });
 
-            slider.addEventListener("change", saveSetting);
+            slider.addEventListener("change", save);
 
-            // Number input: validate when user finishes editing.
-            const commitNumberInput = async () => {
-                const rawValue = numberInput.value.trim();
-                const newValue = Number(rawValue);
+            number.addEventListener("change", async () => {
+                const raw = number.value.trim();
+                const value = Number(raw);
 
-                const isValid =
-                    rawValue !== "" &&
-                    Number.isInteger(newValue) &&
-                    newValue >= control.min &&
-                    newValue <= control.max;
+                const valid =
+                    raw !== "" &&
+                    Number.isInteger(value) &&
+                    value >= control.min &&
+                    value <= control.max;
 
-                if (!isValid) {
-                    // Restore the previous valid value.
-                    numberInput.value = this.settings[control.key];
+                if (!valid) {
+                    number.value = this.settings[control.key];
                     return;
                 }
 
-                updateSetting(newValue);
-                await saveSetting();
-            };
+                update(value);
+                await save();
+            });
 
-            numberInput.addEventListener("change", commitNumberInput);
-
-            // Prevent clicks on the settings controls from
-            // triggering any reader-level keyboard shortcuts later.
-            numberInput.addEventListener("keydown", (event) => {
+            number.addEventListener("keydown", event => {
                 event.stopPropagation();
             });
 
-            inputRow.append(slider, numberInput, unit);
-            wrapper.append(label, inputRow);
+            row.append(slider, number, unit);
+            wrapper.append(label, row);
 
             panel.appendChild(wrapper);
         }
@@ -600,6 +733,10 @@ class VerticalReader {
         this.container.append(button, panel);
     }
 
+    // ========================================
+    // CLOSE READER
+    // ========================================
+
     close() {
         this.closed = true;
 
@@ -610,68 +747,5 @@ class VerticalReader {
 
         this.container?.remove();
         this.container = null;
-    }
-
-    captureReadingPosition() {
-        if (!this.container) {
-            return null;
-        }
-
-        const slots = this.container.querySelectorAll(
-            ".reader-image-slot"
-        );
-
-        const containerTop =
-            this.container.getBoundingClientRect().top;
-
-        for (const slot of slots) {
-            const rect = slot.getBoundingClientRect();
-
-            // Find the first image that extends below
-            // the top of the reading viewport.
-            if (rect.bottom > containerTop) {
-                const index = Number(slot.dataset.index);
-
-                // How far through this image are we?
-                const offset = containerTop - rect.top;
-
-                const progress = Math.max(
-                    0,
-                    Math.min(1, offset / rect.height)
-                );
-
-                return { index, progress };
-            }
-        }
-
-        return null;
-    }
-
-    restoreReadingPosition(position) {
-        if (!position || !this.container) {
-            return;
-        }
-
-        const slot = this.container.querySelector(
-            `.reader-image-slot[data-index="${position.index}"]`
-        );
-
-        if (!slot) {
-            return;
-        }
-
-        const containerRect =
-            this.container.getBoundingClientRect();
-
-        const slotRect = slot.getBoundingClientRect();
-
-        // Where should the viewport start relative
-        // to the resized image?
-        const desiredOffset = position.progress * slotRect.height;
-
-        // Adjust scrollTop so the same portion
-        // of the image remains visible.
-        this.container.scrollTop +=
-            slotRect.top - containerRect.top + desiredOffset;
     }
 }
