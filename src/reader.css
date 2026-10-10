@@ -1,29 +1,42 @@
 /* =========================================
-   1. MAIN READER TOGGLE BUTTON
+   1. GALLERY READER BUTTON
    ========================================= */
 
 #vertical-reader-button {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    z-index: 99999;
+    display: block;
+    position: static;
 
-    padding: 12px 20px;
+    /* Fallback width if the category cannot be measured */
+    width: 120px;
+    max-width: 100%;
 
-    background-color: #2563eb;
+    margin: 0 auto 12px;
+    padding: 6px 8px;
+
+    background: linear-gradient(to bottom,
+            #54765a,
+            #36523c);
+
     color: white;
 
-    border: none;
-    border-radius: 8px;
+    border: 1px solid #29442d;
+    border-radius: 4px;
 
-    font-size: 14px;
-    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: bold;
+
+    text-align: center;
     cursor: pointer;
+    box-sizing: border-box;
 }
 
 #vertical-reader-button:hover {
-    background-color: #1d4ed8;
+    background: linear-gradient(to bottom,
+            #64896a,
+            #426348);
 }
 
 #vertical-reader-button:disabled {
@@ -31,9 +44,56 @@
     cursor: wait;
 }
 
+/* Book icon and text */
+#vertical-reader-button .reader-button-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    gap: 5px;
+    white-space: nowrap;
+}
+
+#vertical-reader-button .reader-button-content svg {
+    display: block;
+    flex-shrink: 0;
+}
+
 
 /* =========================================
-   2. READER CONTAINER
+   2. BUTTON WHILE READER IS OPEN
+   ========================================= */
+
+#vertical-reader-button.reader-open {
+    position: fixed;
+
+    top: 20px;
+    right: 20px;
+
+    width: auto;
+    max-width: none;
+
+    margin: 0;
+    padding: 12px 20px;
+
+    z-index: 99999;
+
+    background-color: #2563eb;
+    background-image: none;
+
+    border: none;
+    border-radius: 8px;
+
+    font-size: 14px;
+}
+
+#vertical-reader-button.reader-open:hover {
+    background-color: #1d4ed8;
+}
+
+
+/* =========================================
+   3. READER CONTAINER
    ========================================= */
 
 #vertical-reader-container {
@@ -54,14 +114,13 @@
 
     padding: 80px 20px 40px;
 
-    /* Default values overridden by JavaScript */
     --reader-image-width: 900px;
     --reader-image-spacing: 16px;
 }
 
 
 /* =========================================
-   3. IMAGE PLACEHOLDERS AND SLOTS
+   4. IMAGE SLOTS
    ========================================= */
 
 #vertical-reader-container .reader-image-slot {
@@ -86,7 +145,7 @@
 
 
 /* =========================================
-   4. LOADED IMAGES
+   5. LOADED IMAGES
    ========================================= */
 
 #vertical-reader-container .reader-image {
@@ -103,7 +162,7 @@
 
 
 /* =========================================
-   5. LOADING AND ERROR STATES
+   6. LOADING AND ERROR STATES
    ========================================= */
 
 #vertical-reader-container .reader-status {
@@ -144,7 +203,7 @@
 
 
 /* =========================================
-   6. RETRY BUTTON
+   7. RETRY BUTTON
    ========================================= */
 
 #vertical-reader-container .reader-retry-button {
@@ -167,11 +226,12 @@
 
 
 /* =========================================
-   7. SETTINGS BUTTON
+   8. SETTINGS BUTTON
    ========================================= */
 
 #vertical-reader-container .reader-settings-button {
     position: fixed;
+
     top: 70px;
     right: 20px;
 
@@ -197,11 +257,12 @@
 
 
 /* =========================================
-   8. SETTINGS PANEL
+   9. SETTINGS PANEL
    ========================================= */
 
 #vertical-reader-container .reader-settings-panel {
     position: fixed;
+
     top: 120px;
     right: 20px;
 
@@ -242,7 +303,7 @@
 
 
 /* =========================================
-   9. INDIVIDUAL SETTINGS
+   10. INDIVIDUAL SETTINGS
    ========================================= */
 
 #vertical-reader-container .reader-setting {
@@ -267,7 +328,7 @@
 
 
 /* =========================================
-   10. SLIDER + NUMBER INPUT ROW
+   11. SLIDER AND NUMBER INPUT ROW
    ========================================= */
 
 #vertical-reader-container .reader-setting-input-row {
@@ -284,7 +345,7 @@
 
 
 /* =========================================
-   11. SLIDER
+   12. SLIDER
    ========================================= */
 
 #vertical-reader-container .reader-setting-input-row input[type="range"] {
@@ -305,7 +366,7 @@
 
 
 /* =========================================
-   12. NUMBER INPUT
+   13. NUMBER INPUT
    ========================================= */
 
 #vertical-reader-container .reader-setting-input-row input[type="number"] {
@@ -336,7 +397,7 @@
 
 
 /* =========================================
-   13. SETTING UNITS
+   14. SETTING UNITS
    ========================================= */
 
 #vertical-reader-container .reader-setting-input-row>span {
@@ -352,7 +413,7 @@
 
 
 /* =========================================
-   14. SMALL SCREEN ADJUSTMENTS
+   15. SMALL SCREEN ADJUSTMENTS
    ========================================= */
 
 @media (max-width: 480px) {
@@ -363,8 +424,10 @@
 
     #vertical-reader-container .reader-settings-panel {
         right: 10px;
+
         width: 320px;
         max-width: calc(100vw - 20px);
+
         padding: 16px;
     }
 
