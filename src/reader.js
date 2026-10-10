@@ -1,5 +1,11 @@
-class VerticalReader {
+const ImageState = Object.freeze({
+    WAITING: "waiting",
+    LOADING: "loading",
+    LOADED: "loaded",
+    FAILED: "failed"
+});
 
+class VerticalReader {
     constructor(imagePageUrls) {
         this.imagePageUrls = imagePageUrls;
 
@@ -14,12 +20,10 @@ class VerticalReader {
 
         this.closed = false;
 
-        // Track the loading state of every image.
         this.imageStates = new Array(
             imagePageUrls.length
-        ).fill("waiting");
+        ).fill(ImageState.WAITING);
     }
-
 
     open() {
         this.container = document.createElement("div");
@@ -40,8 +44,67 @@ class VerticalReader {
 
             this.container.appendChild(placeholder);
 
-            this.setImageState(index, "waiting");
+            this.setImageState(index, ImageState.WAITING);
         });
+    }
+
+    setImageState(index, state, message = "") {
+        if (this.closed || !this.container) {
+            return;
+        }
+
+        this.imageStates[index] = state;
+
+        const slot = this.container.querySelector(
+            `[data-index="${index}"]`
+        );
+
+        if (!slot) {
+            return;
+        }
+
+        // Loaded images are already displayed.
+        if (state === ImageState.LOADED) {
+            return;
+        }
+
+        const status = document.createElement("div");
+        status.className = "reader-status";
+
+        const text = document.createElement("p");
+
+        if (state === ImageState.LOADING) {
+            const spinner = document.createElement("div");
+            spinner.className = "reader-spinner";
+
+            status.appendChild(spinner);
+
+            text.textContent = `Loading page ${index + 1}...`;
+
+        } else if (state === ImageState.FAILED) {
+            text.textContent =
+                message || `Failed to load page ${index + 1}`;
+
+            const retryButton = document.createElement("button");
+
+            retryButton.className = "reader-retry-button";
+            retryButton.textContent = "Retry";
+
+            retryButton.addEventListener("click", () => {
+                this.retryImage(index);
+            });
+
+            status.appendChild(text, retryButton);
+            slot.replaceChildren(status);
+
+            return;
+
+        } else {
+            text.textContent = `Page ${index + 1}`;
+        }
+
+        status.appendChild(text);
+        slot.replaceChildren(status);
     }
 
     setupObserver() {
@@ -83,19 +146,19 @@ class VerticalReader {
         ) {
             const index = this.queue.shift();
 
-            // Ignore images already loading or loaded.
-            if (this.imageStates[index] !== "waiting") {
+            // Only waiting images can start loading.
+            if (this.imageStates[index] !== ImageState.WAITING) {
                 continue;
             }
 
             this.activeRequests++;
 
-            this.setImageState(index, "loading");
+            this.setImageState(index, ImageState.LOADING);
 
             this.loadImage(index)
                 .then(() => {
                     if (!this.closed) {
-                        this.imageStates[index] = "loaded";
+                        this.imageStates[index] = ImageState.LOADED;
                     }
                 })
                 .catch((error) => {
@@ -107,7 +170,7 @@ class VerticalReader {
 
                     this.setImageState(
                         index,
-                        "failed",
+                        ImageState.FAILED,
                         `Failed to load page ${index + 1}`
                     );
                 })
@@ -138,17 +201,19 @@ class VerticalReader {
             return;
         }
 
-        // Create an image in memory.
+        // Preload image before inserting it into the DOM.
         const img = new Image();
 
         img.className = "reader-image";
         img.alt = `Page ${index + 1}`;
 
-        // Wait until the image has downloaded.
         await new Promise((resolve, reject) => {
             img.onload = resolve;
+
             img.onerror = () => {
-                reject(new Error(`Image ${index + 1} failed to load`));
+                reject(
+                    new Error(`Image ${index + 1} failed to load`)
+                );
             };
 
             img.src = imageUrl;
@@ -157,7 +222,9 @@ class VerticalReader {
                 if (img.naturalWidth > 0) {
                     resolve();
                 } else {
-                    reject(new Error(`Image ${index + 1} failed to load`));
+                    reject(
+                        new Error(`Image ${index + 1} failed to load`)
+                    );
                 }
             }
         });
@@ -166,23 +233,10 @@ class VerticalReader {
             return;
         }
 
-        // Insert the fully loaded image.
+        // Preserve scroll position when replacing the placeholder.
         this.preserveScrollPosition(() => {
             slot.replaceChildren(img);
         });
-    }
-
-
-    close() {
-        this.closed = true;
-
-        this.observer?.disconnect();
-        this.controller.abort();
-
-        this.queue = [];
-
-        this.container?.remove();
-        this.container = null;
     }
 
     preserveScrollPosition(updateDOM) {
@@ -199,7 +253,6 @@ class VerticalReader {
         const containerTop =
             container.getBoundingClientRect().top;
 
-        // Find the first slot intersecting the visible viewport.
         let anchor = null;
 
         for (const slot of slots) {
@@ -211,77 +264,17 @@ class VerticalReader {
             }
         }
 
-        // Record its position before the DOM changes.
         const oldTop = anchor?.getBoundingClientRect().top;
 
-        // Apply the DOM change.
         updateDOM();
 
         if (!anchor) {
             return;
         }
 
-        // Measure the anchor again after the DOM change.
         const newTop = anchor.getBoundingClientRect().top;
 
-        // Compensate for movement.
         container.scrollTop += newTop - oldTop;
-    }
-
-    setImageState(index, state, message = "") {
-        if (this.closed || !this.container) {
-            return;
-        }
-
-        this.imageStates[index] = state;
-
-        const slot = this.container.querySelector(
-            `[data-index="${index}"]`
-        );
-
-        if (!slot) {
-            return;
-        }
-
-        // A loaded image is already displayed.
-        if (state === "loaded") {
-            return;
-        }
-
-        const status = document.createElement("div");
-        status.className = "reader-status";
-
-        const text = document.createElement("p");
-
-        if (state === "loading") {
-            const spinner = document.createElement("div");
-            spinner.className = "reader-spinner";
-
-            status.appendChild(spinner);
-
-            text.textContent = `Loading page ${index + 1}...`;
-        } else if (state === "failed") {
-            text.textContent =
-                message || `Failed to load page ${index + 1}`;
-
-            const retryButton = document.createElement("button");
-
-            retryButton.className = "reader-retry-button";
-            retryButton.textContent = "Retry";
-
-            retryButton.addEventListener("click", () => {
-                this.retryImage(index);
-            });
-
-            status.appendChild(text, retryButton);
-            slot.replaceChildren(status);
-            return;
-        } else {
-            text.textContent = `Page ${index + 1}`;
-        }
-
-        status.appendChild(text);
-        slot.replaceChildren(status);
     }
 
     retryImage(index) {
@@ -289,16 +282,28 @@ class VerticalReader {
             return;
         }
 
-        if (this.imageStates[index] !== "failed") {
+        if (this.imageStates[index] !== ImageState.FAILED) {
             return;
         }
 
-        // Reset the image to the waiting state.
-        this.setImageState(index, "waiting");
+        // Reset to waiting so processQueue can load it again.
+        this.setImageState(index, ImageState.WAITING);
 
-        // Add it back into the request queue.
+        // Prioritize manually retried images.
         this.queue.unshift(index);
 
         this.processQueue();
+    }
+
+    close() {
+        this.closed = true;
+
+        this.observer?.disconnect();
+        this.controller.abort();
+
+        this.queue = [];
+
+        this.container?.remove();
+        this.container = null;
     }
 }
