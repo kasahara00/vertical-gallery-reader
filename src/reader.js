@@ -51,6 +51,7 @@ class VerticalReader {
         this.createSettingsButton();
         this.createDiscoveryMessage();
         this.setupObserver();
+        this.setupKeyboardNavigation();
 
         this.container.addEventListener(
             "scroll",
@@ -734,6 +735,108 @@ class VerticalReader {
     }
 
     // ========================================
+    // KEYBOARD NAVIGATION
+    // ========================================
+
+    scrollToImage(index) {
+        if (this.closed || !this.container) {
+            return;
+        }
+
+        // Keep the index within discovered images.
+        const targetIndex = Math.max(
+            0,
+            Math.min(index, this.imagePageUrls.length - 1)
+        );
+
+        const slot = this.getSlot(targetIndex);
+
+        if (!slot) {
+            return;
+        }
+
+        // Calculate the slot position relative
+        // to the reader's scroll container.
+        const containerRect =
+            this.container.getBoundingClientRect();
+
+        const slotRect = slot.getBoundingClientRect();
+
+        const targetScrollTop =
+            this.container.scrollTop +
+            slotRect.top -
+            containerRect.top;
+
+        this.container.scrollTo({
+            top: targetScrollTop,
+            behavior: "instant"
+        });
+
+        this.currentIndex = targetIndex;
+        this.updatePreloadQueue();
+    }
+
+    setupKeyboardNavigation() {
+        this.handleKeyDown = event => {
+            if (this.closed) {
+                return;
+            }
+
+            // Don't interfere with typing in settings.
+            const target = event.target;
+
+            if (
+                target instanceof HTMLElement &&
+                (
+                    target.matches("input, textarea, select") ||
+                    target.isContentEditable
+                )
+            ) {
+                return;
+            }
+
+            // Preserve browser shortcuts.
+            if (event.ctrlKey || event.metaKey || event.altKey) {
+                return;
+            }
+
+            switch (event.key) {
+                case "ArrowRight":
+                    event.preventDefault();
+                    this.scrollToImage(this.currentIndex + 1);
+                    break;
+
+                case "ArrowLeft":
+                    event.preventDefault();
+                    this.scrollToImage(this.currentIndex - 1);
+                    break;
+
+                case "Home":
+                    event.preventDefault();
+                    this.scrollToImage(0);
+                    break;
+
+                case "End":
+                    event.preventDefault();
+                    this.scrollToImage(
+                        this.imagePageUrls.length - 1
+                    );
+                    break;
+
+                case "Escape":
+                    // We'll connect this to closeReader()
+                    // in content.js.
+                    break;
+            }
+        };
+
+        document.addEventListener(
+            "keydown",
+            this.handleKeyDown
+        );
+    }
+
+    // ========================================
     // CLOSE READER
     // ========================================
 
@@ -744,6 +847,11 @@ class VerticalReader {
         this.controller.abort();
 
         this.queue = [];
+
+        document.removeEventListener(
+            "keydown",
+            this.handleKeyDown
+        );
 
         this.container?.remove();
         this.container = null;
