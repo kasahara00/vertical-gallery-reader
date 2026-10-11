@@ -849,18 +849,40 @@ class VerticalReader {
         const indicator = document.createElement("div");
 
         indicator.className = "reader-page-indicator";
-        indicator.setAttribute("role", "status");
-        indicator.setAttribute("aria-live", "off");
+        indicator.setAttribute("role", "button");
+        indicator.setAttribute("tabindex", "0");
+        indicator.setAttribute("aria-label", "Jump to page");
+        indicator.title = "Click to jump to a page";
 
         this.pageIndicator = indicator;
+        this.pageIndicatorEditing = false;
+
+        indicator.addEventListener("click", () => {
+            if (!this.pageIndicatorEditing) {
+                this.startEditingPageIndicator();
+            }
+        });
+
+        indicator.addEventListener("keydown", event => {
+            if (
+                !this.pageIndicatorEditing &&
+                (event.key === "Enter" || event.key === " ")
+            ) {
+                event.preventDefault();
+                this.startEditingPageIndicator();
+            }
+        });
 
         this.container.appendChild(indicator);
-
         this.updatePageIndicator();
     }
 
     updatePageIndicator() {
-        if (!this.pageIndicator || this.closed) {
+        if (
+            !this.pageIndicator ||
+            this.closed ||
+            this.pageIndicatorEditing
+        ) {
             return;
         }
 
@@ -880,6 +902,104 @@ class VerticalReader {
 
         this.pageIndicator.textContent =
             `Page ${current} / ${total}${suffix}`;
+    }
+
+    startEditingPageIndicator() {
+        if (
+            this.closed ||
+            this.pageIndicatorEditing ||
+            this.imagePageUrls.length === 0
+        ) {
+            return;
+        }
+
+        this.pageIndicatorEditing = true;
+
+        const currentPage = this.currentIndex + 1;
+        const total = this.imagePageUrls.length;
+
+        const input = document.createElement("input");
+
+        input.type = "number";
+        input.className = "reader-page-input";
+
+        input.min = "1";
+        input.max = String(total);
+        input.step = "1";
+        input.value = String(currentPage);
+
+        input.setAttribute("aria-label", "Page number");
+
+        // Always fit the largest possible page number.
+        // For example, 462 pages needs room for 3 digits.
+        const digits = String(total).length;
+        input.style.width = `${digits + 0.5}ch`;
+
+        const prefix = document.createElement("span");
+        prefix.textContent = "Page ";
+
+        const totalLabel = document.createElement("span");
+
+        const suffix = this.discoveryFinished ? "" : "+";
+        totalLabel.textContent = ` / ${total}${suffix}`;
+
+        const finishEditing = shouldJump => {
+            if (!this.pageIndicatorEditing) {
+                return;
+            }
+
+            this.pageIndicatorEditing = false;
+
+            const rawValue = input.value.trim();
+            const page = Number(rawValue);
+
+            const valid =
+                rawValue !== "" &&
+                Number.isInteger(page) &&
+                page >= 1 &&
+                page <= this.imagePageUrls.length;
+
+            if (shouldJump && valid) {
+                this.scrollToImage(page - 1);
+            }
+
+            this.updatePageIndicator();
+
+            // Restore keyboard focus to the reader
+            // so Up/Down scrolling works immediately.
+            if (!this.closed && this.container) {
+                this.container.focus({ preventScroll: true });
+            }
+        };
+
+        input.addEventListener("keydown", event => {
+            // Prevent keyboard navigation shortcuts from
+            // interfering while editing the page number.
+            event.stopPropagation();
+
+            if (event.key === "Enter") {
+                event.preventDefault();
+                finishEditing(true);
+            } else if (event.key === "Escape") {
+                event.preventDefault();
+                finishEditing(false);
+            }
+        });
+
+        // Clicking elsewhere cancels the edit.
+        input.addEventListener("blur", () => {
+            finishEditing(false);
+        });
+
+        this.pageIndicator.replaceChildren(
+            prefix,
+            input,
+            totalLabel
+        );
+
+        // Select the current page number automatically.
+        input.focus();
+        input.select();
     }
 
     updateCurrentPage(index) {

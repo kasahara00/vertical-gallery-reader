@@ -447,7 +447,6 @@
 
 .reader-page-indicator {
   position: fixed;
-
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
@@ -471,10 +470,49 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 
-  /* Don't block mouse interactions with the reader. */
-  pointer-events: none;
-
-  /* Keep the page counter visually separate
-     from the reader images. */
+  cursor: pointer;
   user-select: none;
+}
+
+.reader-page-indicator:hover {
+  background: rgba(51, 65, 85, 0.98);
+}
+
+.reader-page-indicator:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 3px;
+}
+
+.reader-page-input {
+  box-sizing: content-box;
+
+  padding: 2px 3px;
+  margin: 0 2px;
+
+  background: rgba(15, 23, 42, 0.9);
+  color: #f9fafb;
+
+  border: 1px solid #64748b;
+  border-radius: 4px;
+
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+
+  outline: none;
+}
+
+.reader-page-input:focus {
+  border-color: #93c5fd;
+}
+
+/* Hide the up/down number spinner buttons. */
+.reader-page-input::-webkit-inner-spin-button,
+.reader-page-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
