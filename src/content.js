@@ -76,9 +76,10 @@ let isOpening = false;
 // ========================================
 
 async function openReader() {
-	// Load saved settings first.
-	// Do not wait for gallery URL discovery.
-	const settings = await ReaderSettings.load();
+	const [settings, savedPosition] = await Promise.all([
+		ReaderSettings.load(),
+		ReaderProgress.load()
+	]);
 
 	previousOverflow =
 		document.documentElement.style.overflow;
@@ -89,8 +90,16 @@ async function openReader() {
 
 	reader = currentReader;
 
-	// Open immediately, even with zero image URLs.
 	currentReader.open();
+
+	// Set the saved position before gallery discovery starts.
+	if (savedPosition) {
+		currentReader.setSavedPosition(savedPosition);
+	} else {
+		// No previous progress: start from the beginning
+		// and allow future saves.
+		currentReader.hasRestoredProgress = true;
+	}
 
 	// Move the button above the full-screen overlay.
 	document.body.appendChild(button);

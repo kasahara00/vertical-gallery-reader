@@ -32,6 +32,13 @@ class VerticalReader {
         this.discoveryMessage = null;
 
         this.seenUrls = new Set(this.imagePageUrls);
+
+        this.savedPosition = null;
+        this.hasRestoredProgress = false;
+
+        this.progressSaveTimer = null;
+        this.progressSaveDelay = 500;
+
     }
 
     // ========================================
@@ -58,7 +65,10 @@ class VerticalReader {
 
         this.container.addEventListener(
             "scroll",
-            () => this.scheduleScrollUpdate(),
+            () => {
+                this.scheduleScrollUpdate();
+                this.scheduleProgressSave();
+            },
             { passive: true }
         );
 
@@ -120,6 +130,7 @@ class VerticalReader {
         this.discoveryFinished = true;
         this.updateDiscoveryMessage(error);
         this.updatePageIndicator();
+        this.tryRestoreProgress();
     }
 
     // ========================================
@@ -153,6 +164,7 @@ class VerticalReader {
         if (added > 0) {
             this.updateDiscoveryMessage();
             this.updatePageIndicator();
+            this.tryRestoreProgress();
             this.scheduleScrollUpdate();
             this.updatePreloadQueue();
         }
@@ -469,6 +481,17 @@ class VerticalReader {
         this.preserveScrollPosition(() => {
             slot.replaceChildren(img);
         });
+
+        // Once the saved image has loaded, restore its
+        // fractional reading position accurately.
+        if (
+            this.savedPosition &&
+            this.hasRestoredProgress &&
+            index === this.savedPosition.index
+        ) {
+            this.restoreReadingPosition(this.savedPosition);
+            this.savedPosition = null;
+        }
 
         this.scheduleScrollUpdate();
     }
@@ -1016,10 +1039,121 @@ class VerticalReader {
     }
 
     // ========================================
+    // READING PROGRESS
+    // ========================================
+
+    // Called after saved progress has been loaded.
+    setSavedPosition(position) {
+        if (
+            !position ||
+            !Number.isInteger(position.index) ||
+            position.index < 0
+        ) {
+            return;
+        }
+
+        this.savedPosition = {
+            index: position.index,
+            progress: Math.max(
+                0,
+                Math.min(1, Number(position.progress) || 0)
+            )
+        };
+
+        this.tryRestoreProgress();
+    }
+
+    // Wait until the target image has been discovered.
+    tryRestoreProgress() {
+        if (
+            this.closed ||
+            this.hasRestoredProgress ||
+            !this.savedPosition ||
+            !this.container
+        ) {
+            return;
+        }
+
+        const targetIndex = this.savedPosition.index;
+
+        if (targetIndex >= this.imagePageUrls.length) {
+            // More gallery pages may still be discovered.
+            if (!this.discoveryFinished) return;
+
+            // Saved page no longer exists.
+            this.hasRestoredProgress = true;
+            return;
+        }
+
+        this.hasRestoredProgress = true;
+
+        this.scrollToImage(targetIndex);
+
+        this.restoreReadingPosition(
+            this.savedPosition
+        );
+
+        this.scheduleScrollUpdate();
+    }
+
+    // Debounce saves to avoid excessive storage writes.
+    scheduleProgressSave() {
+        if (
+            this.closed ||
+            !this.hasRestoredProgress
+        ) {
+            return;
+        }
+
+        clearTimeout(this.progressSaveTimer);
+
+        this.progressSaveTimer = setTimeout(() => {
+            this.saveProgress();
+        }, this.progressSaveDelay);
+    }
+
+    async saveProgress() {
+        if (
+            this.closed ||
+            !this.hasRestoredProgress
+        ) {
+            return;
+        }
+
+        const position = this.captureReadingPosition();
+
+        if (!position) return;
+
+        try {
+            await ReaderProgress.save(position);
+        } catch (error) {
+            console.error(
+                "Failed to save reading progress:",
+                error
+            );
+        }
+    }
+
+    // ========================================
     // CLOSE READER
     // ========================================
 
     close() {
+        clearTimeout(this.progressSaveTimer);
+
+        if (this.hasRestoredProgress) {
+            const position = this.captureReadingPosition();
+
+            if (position) {
+                ReaderProgress.save(position).catch(error => {
+                    console.error(
+                        "Failed to save reading progress:",
+                        error
+                    );
+                });
+            }
+        }
+
         this.closed = true;
 
         this.observer?.disconnect();
