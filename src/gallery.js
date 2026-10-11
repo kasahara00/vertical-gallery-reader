@@ -1,4 +1,3 @@
-
 function getImagePageUrls(doc = document) {
     const links = doc.querySelectorAll('a[href*="/s/"]');
 
@@ -97,4 +96,35 @@ async function getAllImagePageUrls(signal) {
     }
 
     return urls;
+}
+
+function getGalleryMetadata(doc = document) {
+    // E-Hentai gallery title.
+    const title =
+        doc.querySelector("#gn")?.textContent?.trim() ||
+        doc.title ||
+        "Untitled Gallery";
+
+    // E-Hentai normally displays its numerical rating
+    // inside #rating_label, e.g. "Average: 4.72".
+    const ratingText =
+        doc.querySelector("#rating_label")?.textContent?.trim() || "";
+
+    const match = ratingText.match(
+        /Average\s*:\s*(\d+(?:\.\d+)?)/i
+    );
+
+    const rating = match ? Number(match[1]) : null;
+
+    return {
+        title,
+
+        rating:
+            rating !== null &&
+                Number.isFinite(rating) &&
+                rating >= 0 &&
+                rating <= 5
+                ? rating.toFixed(2)
+                : null
+    };
 }

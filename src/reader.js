@@ -39,6 +39,18 @@ class VerticalReader {
         this.progressSaveTimer = null;
         this.progressSaveDelay = 500;
 
+        this.galleryMetadata = {
+            title: "Untitled Gallery",
+            rating: null
+        };
+
+        this.onCloseRequested = null;
+        this.readerHeader = null;
+        this.readerSettingsPanel = null;
+
+        this.uiHideTimer = null;
+        this.uiHideDelay = 3000;
+        this.uiVisible = true;
     }
 
     // ========================================
@@ -57,7 +69,8 @@ class VerticalReader {
         document.body.appendChild(this.container);
 
         this.createPlaceholders();
-        this.createSettingsButton();
+        this.createHeader();
+        this.setupAutoHideUI();
         this.createDiscoveryMessage();
         this.createPageIndicator();
         this.setupObserver();
@@ -746,21 +759,177 @@ class VerticalReader {
         return panel;
     }
 
-    createSettingsButton() {
-        const button = document.createElement("button");
+    createHeader() {
+        const header = document.createElement("header");
+        header.className = "reader-header";
 
-        button.className = "reader-settings-button";
-        button.textContent = "⚙ Settings";
+        const info = document.createElement("div");
+        info.className = "reader-header-info";
+
+        const title = document.createElement("div");
+        title.className = "reader-header-title";
+        title.textContent = this.galleryMetadata.title;
+        title.title = this.galleryMetadata.title;
+
+        info.appendChild(title);
+
+        if (this.galleryMetadata.rating !== null) {
+            const rating = document.createElement("div");
+            rating.className = "reader-header-rating";
+
+            const star = document.createElement("span");
+            star.className = "reader-rating-star";
+            star.textContent = "★";
+            star.setAttribute("aria-hidden", "true");
+
+            const value = document.createElement("span");
+            value.textContent = this.galleryMetadata.rating;
+
+            rating.append(star, value);
+            info.appendChild(rating);
+        }
+
+        const actions = document.createElement("div");
+        actions.className = "reader-header-actions";
+
+        const settingsButton = this.createHeaderIconButton(
+            "Settings",
+            '<circle cx="12" cy="12" r="3"/>' +
+            '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l-1.82 1.82A1.65 1.65 0 0 0 16.09 18 1.65 1.65 0 0 0 15 19.51V20H9v-.49A1.65 1.65 0 0 0 7.91 18a1.65 1.65 0 0 0-1.82.33l-1.82-1.82A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1.09H3v-3h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l1.82-1.82A1.65 1.65 0 0 0 7.91 6 1.65 1.65 0 0 0 9 4.49V4h6v.49A1.65 1.65 0 0 0 16.09 6a1.65 1.65 0 0 0 1.82-.33l1.82 1.82A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1.09H21v3h-.09A1.65 1.65 0 0 0 19.4 15z"/>'
+        );
+
+        const closeButton = this.createHeaderIconButton(
+            "Close reader",
+            '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'
+        );
+
+        closeButton.classList.add("reader-header-close");
 
         const panel = this.createSettingsPanel();
         panel.hidden = true;
+        panel.classList.add("reader-header-settings-panel");
 
-        button.addEventListener("click", () => {
+        this.readerSettingsPanel = panel;
+
+        settingsButton.addEventListener("click", () => {
             panel.hidden = !panel.hidden;
+
+            if (!panel.hidden) {
+                this.showUI();
+            } else {
+                this.scheduleUIHide();
+            }
         });
 
-        this.container.append(button, panel);
+        closeButton.addEventListener("click", () => {
+            this.onCloseRequested?.();
+        });
+
+        actions.append(settingsButton, closeButton);
+        header.append(info, actions);
+
+        this.container.append(header, panel);
+        this.readerHeader = header;
     }
+
+    createHeaderIconButton(label, paths) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "reader-header-icon";
+        button.title = label;
+        button.setAttribute("aria-label", label);
+
+        button.innerHTML = `
+        <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+        >
+            ${paths}
+        </svg>
+    `;
+
+        return button;
+    }
+
+    showUI() {
+        if (this.closed || !this.container) return;
+
+        this.uiVisible = true;
+        this.container.classList.remove("reader-ui-hidden");
+        this.scheduleUIHide();
+    }
+
+    hideUI() {
+        if (
+            this.closed ||
+            !this.container ||
+            this.pageIndicatorEditing ||
+            (this.readerSettingsPanel &&
+                !this.readerSettingsPanel.hidden)
+        ) {
+            return;
+        }
+
+        this.uiVisible = false;
+        this.container.classList.add("reader-ui-hidden");
+        clearTimeout(this.uiHideTimer);
+    }
+
+    scheduleUIHide() {
+        clearTimeout(this.uiHideTimer);
+
+        if (
+            this.closed ||
+            this.pageIndicatorEditing ||
+            (this.readerSettingsPanel &&
+                !this.readerSettingsPanel.hidden)
+        ) {
+            return;
+        }
+
+        this.uiHideTimer = setTimeout(() => {
+            this.hideUI();
+        }, this.uiHideDelay);
+    }
+
+    setupAutoHideUI() {
+        this.container.addEventListener("pointermove", event => {
+            if (event.pointerType === "mouse") {
+                this.showUI();
+            }
+        }, { passive: true });
+
+        this.container.addEventListener("click", event => {
+            if (event.target.closest(
+                ".reader-header, " +
+                ".reader-header-settings-panel, " +
+                ".reader-page-indicator, " +
+                ".reader-retry-button"
+            )) {
+                return;
+            }
+
+            this.hideUI();
+        });
+
+        this.container.addEventListener("focusin", event => {
+            if (event.target.closest(
+                ".reader-header, .reader-header-settings-panel"
+            )) {
+                this.showUI();
+            }
+        });
+
+        this.scheduleUIHide();
+    }
+
 
     // ========================================
     // KEYBOARD NAVIGATION
@@ -935,8 +1104,11 @@ class VerticalReader {
         ) {
             return;
         }
-
+        this.showUI();
         this.pageIndicatorEditing = true;
+
+        // Prevent the UI from hiding while editing.
+        clearTimeout(this.uiHideTimer);
 
         const currentPage = this.currentIndex + 1;
         const total = this.imagePageUrls.length;
@@ -972,6 +1144,9 @@ class VerticalReader {
             }
 
             this.pageIndicatorEditing = false;
+
+            // Resume automatic hiding after editing.
+            this.scheduleUIHide();
 
             const rawValue = input.value.trim();
             const page = Number(rawValue);
@@ -1168,5 +1343,7 @@ class VerticalReader {
 
         this.container?.remove();
         this.container = null;
+
+        clearTimeout(this.uiHideTimer);
     }
 }
