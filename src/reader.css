@@ -440,3 +440,41 @@
         gap: 8px;
     }
 }
+
+/* =========================================
+   16. PAGE INDICATOR
+   ========================================= */
+
+.reader-page-indicator {
+  position: fixed;
+
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+
+  z-index: 100000;
+
+  padding: 10px 18px;
+
+  background: rgba(30, 41, 59, 0.92);
+  color: #f9fafb;
+
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+
+  /* Don't block mouse interactions with the reader. */
+  pointer-events: none;
+
+  /* Keep the page counter visually separate
+     from the reader images. */
+  user-select: none;
+}

@@ -1,4 +1,3 @@
-
 const ImageState = Object.freeze({
     WAITING: "waiting",
     LOADING: "loading",
@@ -43,6 +42,9 @@ class VerticalReader {
         this.container = document.createElement("div");
         this.container.id = "vertical-reader-container";
 
+        // Make the reader programmatically focusable.
+        this.container.tabIndex = -1;
+
         this.applySettings();
 
         document.body.appendChild(this.container);
@@ -50,6 +52,7 @@ class VerticalReader {
         this.createPlaceholders();
         this.createSettingsButton();
         this.createDiscoveryMessage();
+        this.createPageIndicator();
         this.setupObserver();
         this.setupKeyboardNavigation();
 
@@ -116,6 +119,7 @@ class VerticalReader {
 
         this.discoveryFinished = true;
         this.updateDiscoveryMessage(error);
+        this.updatePageIndicator();
     }
 
     // ========================================
@@ -148,6 +152,7 @@ class VerticalReader {
 
         if (added > 0) {
             this.updateDiscoveryMessage();
+            this.updatePageIndicator();
             this.scheduleScrollUpdate();
             this.updatePreloadQueue();
         }
@@ -308,7 +313,7 @@ class VerticalReader {
             }
         }
 
-        this.currentIndex = newIndex;
+        this.updateCurrentPage(newIndex);
     }
 
     // ========================================
@@ -772,7 +777,7 @@ class VerticalReader {
             behavior: "instant"
         });
 
-        this.currentIndex = targetIndex;
+        this.updateCurrentPage(targetIndex);
         this.updatePreloadQueue();
     }
 
@@ -834,6 +839,60 @@ class VerticalReader {
             "keydown",
             this.handleKeyDown
         );
+    }
+
+    // ========================================
+    // PAGE INDICATOR
+    // ========================================
+
+    createPageIndicator() {
+        const indicator = document.createElement("div");
+
+        indicator.className = "reader-page-indicator";
+        indicator.setAttribute("role", "status");
+        indicator.setAttribute("aria-live", "off");
+
+        this.pageIndicator = indicator;
+
+        this.container.appendChild(indicator);
+
+        this.updatePageIndicator();
+    }
+
+    updatePageIndicator() {
+        if (!this.pageIndicator || this.closed) {
+            return;
+        }
+
+        const total = this.imagePageUrls.length;
+
+        if (total === 0) {
+            this.pageIndicator.textContent = "Finding pages...";
+            return;
+        }
+
+        const current = Math.min(
+            this.currentIndex + 1,
+            total
+        );
+
+        const suffix = this.discoveryFinished ? "" : "+";
+
+        this.pageIndicator.textContent =
+            `Page ${current} / ${total}${suffix}`;
+    }
+
+    updateCurrentPage(index) {
+        if (!this.imagePageUrls.length) {
+            return;
+        }
+
+        this.currentIndex = Math.max(
+            0,
+            Math.min(index, this.imagePageUrls.length - 1)
+        );
+
+        this.updatePageIndicator();
     }
 
     // ========================================

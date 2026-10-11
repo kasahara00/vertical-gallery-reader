@@ -98,6 +98,7 @@ async function openReader() {
 	button.style.width = "";
 	button.classList.add("reader-open");
 	button.textContent = "Close Reader";
+	currentReader.container.focus({ preventScroll: true });
 
 	const controller = new AbortController();
 
