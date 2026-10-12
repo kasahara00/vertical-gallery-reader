@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Vertical Gallery Reader",
-  "version": "1.1.0",
-  "description": "Read galleries in a vertical scrolling layout.",
+  "version": "1.2.1",
+  "description": "Vertical gallery reader for E-Hentai and nhentai with site adapters.",
   "permissions": [
     "storage"
   ],
@@ -22,6 +22,23 @@
       "css": [
         "src/styles/reader.css",
         "src/styles/ehentai.css"
+      ]
+    },
+    {
+      "matches": [
+        "https://nhentai.net/*"
+      ],
+      "js": [
+        "src/adapters/registry.js",
+        "src/core/settings.js",
+        "src/core/progress.js",
+        "src/core/reader.js",
+        "src/adapters/nhentai.js",
+        "src/content.js"
+      ],
+      "css": [
+        "src/styles/reader.css",
+        "src/styles/nhentai.css"
       ]
     }
   ]

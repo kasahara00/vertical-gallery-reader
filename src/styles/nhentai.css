@@ -1,0 +1,21 @@
+#vertical-reader-button {
+    position: static !important;
+    width: auto !important;
+    height: auto;
+    vertical-align: middle;
+    cursor: pointer;
+}
+
+#vertical-reader-button .reader-button-content {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+#vertical-reader-button .reader-button-content svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
