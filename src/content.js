@@ -1,5 +1,10 @@
-
 console.log("Vertical Gallery Reader loaded!");
+
+const adapter = getGalleryAdapter();
+if (!adapter) {
+    throw new Error("No gallery adapter supports this page");
+}
+ReaderProgress.setGalleryKey(adapter.getGalleryKey());
 
 const button = document.createElement("button");
 button.id = "vertical-reader-button";
@@ -27,7 +32,7 @@ function showReadButton() {
   `;
 }
 
-const categoryContainer = document.querySelector("#gdc");
+const categoryContainer = adapter.getButtonContainer();
 
 function placeButtonInGallery() {
 	button.classList.remove("reader-open");
@@ -36,15 +41,12 @@ function placeButtonInGallery() {
 	if (categoryContainer) {
 		categoryContainer.prepend(button);
 
-		const badge = categoryContainer.querySelector(".cs");
+		const width = adapter.getButtonWidth();
 
-		if (badge) {
-			const width = badge.getBoundingClientRect().width;
+		if (width > 0) {
 
-			if (width > 0) {
-				button.style.width = `${width}px`;
-			}
-		}
+            button.style.width = `${width}px`;
+        }
 	} else {
 		document.body.appendChild(button);
 	}
@@ -67,9 +69,9 @@ async function openReader() {
 	previousOverflow = document.documentElement.style.overflow;
 	document.documentElement.style.overflow = "hidden";
 
-	const currentReader = new VerticalReader([], settings);
+	const currentReader = new VerticalReader([], settings, adapter);
 
-	currentReader.galleryMetadata = getGalleryMetadata();
+	currentReader.galleryMetadata = adapter.getMetadata();
 	currentReader.onCloseRequested = closeReader;
 
 	reader = currentReader;
@@ -81,7 +83,6 @@ async function openReader() {
 		currentReader.hasRestoredProgress = true;
 	}
 
-	button.style.display = "";
 	button.style.display = "none";
 
 	currentReader.container.focus({ preventScroll: true });
@@ -92,7 +93,7 @@ async function openReader() {
 	void (async () => {
 		try {
 			for await (
-				const batch of discoverImagePageUrls(controller.signal)
+				const batch of adapter.discoverPages(controller.signal)
 			) {
 				if (controller.signal.aborted || currentReader.closed) {
 					break;

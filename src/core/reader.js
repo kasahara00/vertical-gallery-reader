@@ -6,7 +6,8 @@ const ImageState = Object.freeze({
 });
 
 class VerticalReader {
-    constructor(imagePageUrls, settings) {
+    constructor(imagePageUrls, settings, adapter) {
+        this.adapter = adapter;
         this.imagePageUrls = [...imagePageUrls];
         this.settings = settings;
 
@@ -445,7 +446,7 @@ class VerticalReader {
     // ========================================
 
     async loadImage(index) {
-        const imageUrl = await getImageUrl(
+        const imageUrl = await this.adapter.getImageUrl(
             this.imagePageUrls[index],
             this.controller.signal
         );

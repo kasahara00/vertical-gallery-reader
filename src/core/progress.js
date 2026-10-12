@@ -1,10 +1,15 @@
 const ReaderProgress = {
     PREFIX: "verticalReaderProgress:",
 
+    galleryKey: null,
+
+    setGalleryKey(key) {
+        this.galleryKey = key;
+    },
+
     getGalleryKey() {
-        return this.PREFIX +
-            window.location.origin +
-            window.location.pathname;
+        return this.PREFIX + (this.galleryKey ??
+            window.location.origin + window.location.pathname);
     },
 
     async load() {
